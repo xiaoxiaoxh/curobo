@@ -12,6 +12,7 @@
 # Standard Library
 import math
 from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 # Third Party
 import numpy as np
@@ -84,6 +85,37 @@ def set_prim_transform(
 
     # get scale:
 
+def get_world_transform_xform(prim: Usd.Prim):
+    """
+    Get the local transformation of a prim using Xformable.
+    See https://graphics.pixar.com/usd/release/api/class_usd_geom_xformable.html
+    Args:
+        prim: The prim to calculate the world transformation.
+    Returns:
+        The world transformation matrix.
+        The scale of the prim.
+    """
+    xform = UsdGeom.Xformable(prim)
+    time = Usd.TimeCode.Default() # The time at which we compute the bounding box
+    world_transform: Gf.Matrix4d = xform.ComputeLocalToWorldTransform(time)
+    # get scale:
+    scale: Gf.Vec3d = Gf.Vec3d(*(v.GetLength() for v in world_transform.ExtractRotationMatrix()))
+    scale = list(scale)
+    t_mat = world_transform.RemoveScaleShear()
+
+    translation: Gf.Vec3d = t_mat.ExtractTranslation()
+    rotation: Gf.Rotation = t_mat.ExtractRotation()
+    q = rotation.GetQuaternion()
+    orientation = [q.GetReal()] + list(q.GetImaginary())
+    t_mat = (
+        Pose.from_list(list(translation) + orientation, TensorDeviceType())
+        .get_matrix()
+        .view(4, 4)
+        .cpu()
+        .numpy()
+    )
+
+    return t_mat, scale
 
 def get_prim_world_pose(cache: UsdGeom.XformCache, prim: Usd.Prim, inverse: bool = False):
     world_transform: Gf.Matrix4d = cache.GetLocalToWorldTransform(prim)
@@ -1299,3 +1331,4 @@ class UsdHelper:
                 local_asset_path="",
                 dt=(1 / 24),
             )
+
