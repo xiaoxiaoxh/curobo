@@ -138,7 +138,7 @@ def main():
         tensor_args,
         trajopt_tsteps=32,
         collision_checker_type=CollisionCheckerType.MESH,
-        use_cuda_graph=True,
+        use_cuda_graph=True,  # hack this for debugging
         num_trajopt_seeds=12,
         num_graph_seeds=12,
         interpolation_dt=0.03,
@@ -172,9 +172,13 @@ def main():
     ee_link_name = motion_gen.kinematics.ee_link
 
     # get link poses from saved .npz file:
-    link_poses = np.load("/home/xuehan/Desktop/TestCuRobo/allegro_ee_grasp_poses_3.npz")
+    link_poses = np.load("/home/xuehan/Desktop/TestCuRobo/allegro_ee_grasp_poses_5.npz")
     link_poses = {k: Pose.from_matrix(v) for k, v in link_poses.items()}
     ee_pose = link_poses[ee_link_name]
+
+    # get reference target joint state from saved .npz file:
+    target_js = np.load("/home/xuehan/Desktop/TestCuRobo/iiwa_allegro_target_q_example5.npz")
+    target_js = target_js["default_q"]
 
     link_retract_pose = link_poses
     t_pos = np.ravel(ee_pose.to_list())
@@ -307,8 +311,21 @@ def main():
                     position=tensor_args.to_device(c_p),
                     quaternion=tensor_args.to_device(c_rot),
                 )
+            # generate target JointState:
+            target_js = JointState(
+                position=tensor_args.to_device(target_js),
+                velocity=tensor_args.to_device(np.zeros_like(target_js)),
+                acceleration=tensor_args.to_device(np.zeros_like(target_js)),
+                jerk=tensor_args.to_device(np.zeros_like(target_js)),
+                joint_names=sim_js_names,
+            )
+            target_js = target_js.get_ordered_joint_state(motion_gen.kinematics.joint_names)
+            # TODO: remove this line when we have a better IK solver:
+            # target_js = None
+            # generate plan:
             result = motion_gen.plan_single(
-                cu_js.unsqueeze(0), ik_goal, plan_config.clone(), link_poses=link_poses
+                cu_js.unsqueeze(0), ik_goal, plan_config.clone(),
+                link_poses=link_poses, goal_state=target_js
             )
             # ik_result = ik_solver.solve_single(ik_goal, cu_js.position.view(1,-1), cu_js.position.view(1,1,-1))
 

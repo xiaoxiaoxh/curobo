@@ -875,21 +875,36 @@ class MotionGen(MotionGenConfig):
         use_nn_seed: bool,
         partial_ik_opt: bool,
         link_poses: Optional[Dict[str, Pose]] = None,
+        goal_state: JointState = None,
     ) -> IKResult:
         newton_iters = None
         if partial_ik_opt:
             newton_iters = self.partial_ik_iters
-        ik_result = self.ik_solver.solve_any(
-            solve_state.solve_type,
-            goal_pose,
-            start_state.position.view(-1, self._dof),
-            start_state.position.view(-1, 1, self._dof),
-            solve_state.num_trajopt_seeds,
-            solve_state.num_ik_seeds,
-            use_nn_seed,
-            newton_iters,
-            link_poses,
-        )
+        if goal_state is not None:
+            # use goal_state instead of start_state
+            ik_result = self.ik_solver.solve_any(
+                solve_state.solve_type,
+                goal_pose,
+                goal_state.position.view(-1, self._dof),
+                goal_state.position.view(-1, 1, self._dof),
+                solve_state.num_trajopt_seeds,
+                solve_state.num_ik_seeds,
+                use_nn_seed,
+                newton_iters,
+                link_poses,
+            )
+        else:
+            ik_result = self.ik_solver.solve_any(
+                solve_state.solve_type,
+                goal_pose,
+                start_state.position.view(-1, self._dof),
+                start_state.position.view(-1, 1, self._dof),
+                solve_state.num_trajopt_seeds,
+                solve_state.num_ik_seeds,
+                use_nn_seed,
+                newton_iters,
+                link_poses,
+            )
         return ik_result
 
     @profiler.record_function("motion_gen/trajopt_solve")
@@ -1019,6 +1034,7 @@ class MotionGen(MotionGenConfig):
         goal_pose: Pose,
         plan_config: MotionGenPlanConfig = MotionGenPlanConfig(),
         link_poses: List[Pose] = None,
+        goal_state: JointState = None,
     ):
         start_time = time.time()
         # if plan_config.enable_opt:
@@ -1046,7 +1062,9 @@ class MotionGen(MotionGenConfig):
                 goal_pose,
                 plan_config,
                 link_poses,
+                target_state=goal_state
             )
+            print("Attempt: ", n, "Success: ", result.success, "Status: ", result.status)
             time_dict["solve_time"] += result.solve_time
             time_dict["ik_time"] += result.ik_time
             time_dict["graph_time"] += result.graph_time
@@ -1216,6 +1234,7 @@ class MotionGen(MotionGenConfig):
         goal_pose: Pose,
         plan_config: MotionGenPlanConfig = MotionGenPlanConfig(),
         link_poses: List[Pose] = None,
+        goal_state: JointState = None,
     ) -> MotionGenResult:
         solve_state = self._get_solve_state(
             ReacherSolveType.SINGLE, plan_config, goal_pose, start_state
@@ -1227,6 +1246,7 @@ class MotionGen(MotionGenConfig):
             goal_pose,
             plan_config,
             link_poses=link_poses,
+            goal_state=goal_state
         )
         return result
 
@@ -1326,6 +1346,7 @@ class MotionGen(MotionGenConfig):
         goal_pose: Pose,
         plan_config: MotionGenPlanConfig = MotionGenPlanConfig(),
         link_poses: Optional[Dict[str, Pose]] = None,
+        target_state: JointState = None,
     ) -> MotionGenResult:
         trajopt_seed_traj = None
         trajopt_seed_success = None
@@ -1342,6 +1363,7 @@ class MotionGen(MotionGenConfig):
             plan_config.use_nn_ik_seed,
             plan_config.partial_ik_opt,
             link_poses,
+            goal_state=target_state
         )
 
         if not plan_config.enable_graph and plan_config.partial_ik_opt:
